@@ -1,5 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from 'recharts';
+import React, { useState, useEffect, useCallback } from 'react';
+import { Container, Row, Col, Form, Button } from 'react-bootstrap';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import 'bootstrap/dist/css/bootstrap.min.css';
 
 const BenchmarkDisplay = () => {
   const [repoOwner, setRepoOwner] = useState('');
@@ -14,7 +16,7 @@ const BenchmarkDisplay = () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/repos/${repoOwner}/${repoName}/commits?sha=${commitHash}&per_page=100`);
+      const response = await fetch(`/api/repos/${repoOwner}/${repoName}/commits?sha=${commitHash}&per_page=30`);
       if (!response.ok) throw new Error('Failed to fetch commits');
       const data = await response.json();
       setCommitList(data.map(commit => commit.sha));
@@ -28,14 +30,19 @@ const BenchmarkDisplay = () => {
   const fetchBenchmarkData = async (commits) => {
     setLoading(true);
     setError(null);
-    const data = {};
     try {
-      for (const commit of commits) {
-        const response = await fetch(`/storage/github_micro_bench/${repoName}/benchmark_${commit}.json`);
-        if (response.ok) {
-          data[commit] = await response.json();
-        }
-      }
+      const fetchPromises = commits.map(commit => 
+        fetch(`/storage/github_micro_bench/${repoName}/benchmark_${commit}.json`)
+          .then(response => response.ok ? response.json() : null)
+          .then(data => ({ commit, data }))
+      );
+
+      const results = await Promise.all(fetchPromises);
+      const data = results.reduce((acc, { commit, data }) => {
+        if (data) acc[commit] = data;
+        return acc;
+      }, {});
+
       setBenchmarkData(data);
     } catch (err) {
       setError(err.message);
@@ -59,62 +66,120 @@ const BenchmarkDisplay = () => {
     }
   };
 
-  const prepareChartData = () => {
+  const prepareChartData = useCallback((benchmarkName) => {
     return commitList.map(commit => ({
       commit: commit.substring(0, 7),
-      ...benchmarkData[commit]
-    }));
+      fullCommit: commit,
+      value: benchmarkData[commit]?.[benchmarkName]?.median_time || null
+    })).filter(data => data.value !== null);
+  }, [commitList, benchmarkData]);
+
+  const formatValue = (value) => {
+    if (value === 0) return '0';
+    const absValue = Math.abs(value);
+    if (absValue < 1e-9) return `${(value * 1e12).toFixed(2)} ps`;
+    if (absValue < 1e-6) return `${(value * 1e9).toFixed(2)} ns`;
+    if (absValue < 1e-3) return `${(value * 1e6).toFixed(2)} µs`;
+    if (absValue < 1) return `${(value * 1e3).toFixed(2)} ms`;
+    return `${value.toFixed(2)} s`;
+  };
+
+  const CustomTooltip = ({ active, payload, label }) => {
+    if (active && payload && payload.length) {
+      return (
+        <div className="custom-tooltip bg-white p-2 border rounded shadow">
+          <p className="label">{`Commit: ${payload[0].payload.fullCommit}`}</p>
+          <p>{`Value: ${formatValue(payload[0].value)}`}</p>
+        </div>
+      );
+    }
+    return null;
+  };
+
+  const renderCharts = () => {
+    if (commitList.length === 0 || Object.keys(benchmarkData).length === 0) return null;
+
+    const benchmarkNames = Object.keys(benchmarkData[commitList[0]] || {});
+
+    return (
+      <Container fluid>
+        <Row>
+          {benchmarkNames.map((benchmarkName) => (
+            <Col key={benchmarkName} xs={12} md={6} lg={4} xl={3} className="mb-4">
+              <h2 className="text-sm font-semibold mb-2" title={benchmarkName}>{benchmarkName}</h2>
+              <ResponsiveContainer width="100%" height={300}>
+                <LineChart 
+                  data={prepareChartData(benchmarkName)}
+                  margin={{ top: 20, right: 30, left: 10, bottom: 30 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" />
+                  <XAxis 
+                    dataKey="commit" 
+                    angle={-45} 
+                    textAnchor="end" 
+                    height={60} 
+                    tick={{fontSize: 12}}
+                    interval={0}
+                  />
+                  <YAxis 
+                    tickFormatter={formatValue}
+                    width={80}
+                    tick={{fontSize: 12}}
+                    tickCount={5}
+                  />
+                  <Tooltip content={<CustomTooltip />} />
+                  <Line 
+                    type="monotone" 
+                    dataKey="value" 
+                    stroke="#8884d8" 
+                    dot={false}
+                    strokeWidth={1.5}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
+            </Col>
+          ))}
+        </Row>
+      </Container>
+    );
   };
 
   return (
-    <div className="p-4">
-      <h1 className="text-2xl font-bold mb-4">Benchmark Results</h1>
-      <form onSubmit={handleSubmit} className="mb-4">
-        <input
-          type="text"
-          value={repoOwner}
-          onChange={(e) => setRepoOwner(e.target.value)}
-          placeholder="Repository Owner"
-          className="border p-2 mr-2 mb-2"
-        />
-        <input
-          type="text"
-          value={repoName}
-          onChange={(e) => setRepoName(e.target.value)}
-          placeholder="Repository Name"
-          className="border p-2 mr-2 mb-2"
-        />
-        <input
-          type="text"
-          value={commitHash}
-          onChange={(e) => setCommitHash(e.target.value)}
-          placeholder="Commit Hash"
-          className="border p-2 mr-2 mb-2"
-        />
-        <button type="submit" className="bg-blue-500 text-white p-2 rounded">Fetch Data</button>
-      </form>
+    <Container fluid className="p-4">
+      <h1 className="h2 mb-4">Benchmark Results</h1>
+      <Form onSubmit={handleSubmit} className="mb-4">
+        <Row>
+          <Col xs={12} md={4} className="mb-2">
+            <Form.Control
+              type="text"
+              value={repoOwner}
+              onChange={(e) => setRepoOwner(e.target.value)}
+              placeholder="Repository Owner"
+            />
+          </Col>
+          <Col xs={12} md={4} className="mb-2">
+            <Form.Control
+              type="text"
+              value={repoName}
+              onChange={(e) => setRepoName(e.target.value)}
+              placeholder="Repository Name"
+            />
+          </Col>
+          <Col xs={12} md={4} className="mb-2">
+            <Form.Control
+              type="text"
+              value={commitHash}
+              onChange={(e) => setCommitHash(e.target.value)}
+              placeholder="Commit Hash"
+            />
+          </Col>
+        </Row>
+        <Button type="submit" variant="primary">Fetch Data</Button>
+      </Form>
       {loading && <p>Loading...</p>}
-      {error && <p className="text-red-500">Error: {error}</p>}
-      {Object.keys(benchmarkData).length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          {Object.keys(benchmarkData[commitList[0]]).map(benchmark => (
-            <div key={benchmark} className="border p-4 rounded">
-              <h2 className="text-xl font-semibold mb-2">{benchmark}</h2>
-              <ResponsiveContainer width="100%" height={300}>
-                <LineChart data={prepareChartData()}>
-                  <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis dataKey="commit" />
-                  <YAxis />
-                  <Tooltip />
-                  <Legend />
-                  <Line type="monotone" dataKey={benchmark} stroke="#8884d8" />
-                </LineChart>
-              </ResponsiveContainer>
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+      {error && <p className="text-danger">Error: {error}</p>}
+      {renderCharts()}
+    </Container>
   );
 };
 
