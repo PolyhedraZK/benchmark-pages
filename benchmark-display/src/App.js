@@ -4,19 +4,74 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import 'bootstrap/dist/css/bootstrap.min.css';
 
 const BenchmarkDisplay = () => {
-  const [repoOwner, setRepoOwner] = useState('');
-  const [repoName, setRepoName] = useState('');
+  const [repoOwner, setRepoOwner] = useState('PolyhedraZK');
+  const [repoName, setRepoName] = useState('Expander-rs');
+  const [branches, setBranches] = useState([]);
+  const [selectedBranch, setSelectedBranch] = useState('');
   const [commitHash, setCommitHash] = useState('');
   const [commitList, setCommitList] = useState([]);
   const [benchmarkData, setBenchmarkData] = useState({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
 
+  const fetchBranches = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/branches`;
+
+      const response = await fetch(apiUrl);
+      if (!response.ok) throw new Error('Failed to fetch branches');
+      const data = await response.json();
+      setBranches(data);
+      // Set default branch to 'main' or 'master' if they exist
+      const mainBranch = data.find(branch => branch.name === 'main');
+      const masterBranch = data.find(branch => branch.name === 'master');
+
+      if (mainBranch) {
+        setSelectedBranch('main');
+      } else if (masterBranch) {
+        setSelectedBranch('master');
+      } else if (data.length > 0) {
+        setSelectedBranch(data[0].name); // Fallback to the first branch if neither exists
+      }
+    } catch (err) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    const fetchLatestCommit = async () => {
+      if (!selectedBranch) return;
+
+      setLoading(true);
+      setError(null);
+      try {
+        const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/commits?sha=${selectedBranch}&per_page=1`;
+
+        const response = await fetch(apiUrl);
+        if (!response.ok) throw new Error('Failed to fetch latest commit');
+        const data = await response.json();
+        setCommitHash(data[0].sha);
+      } catch (err) {
+        setError(err.message);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchLatestCommit();
+  }, [selectedBranch]);
+
   const fetchCommitList = async () => {
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/repos/${repoOwner}/${repoName}/commits?sha=${commitHash}&per_page=30`);
+      const apiUrl = `https://api.github.com/repos/${repoOwner}/${repoName}/commits?sha=${commitHash}&per_page=30`;
+
+      const response = await fetch(apiUrl);
       if (!response.ok) throw new Error('Failed to fetch commits');
       const data = await response.json();
       setCommitList(data.map(commit => commit.sha));
@@ -26,13 +81,13 @@ const BenchmarkDisplay = () => {
       setLoading(false);
     }
   };
-  
+
   const fetchBenchmarkData = async (commits) => {
     setLoading(true);
     setError(null);
     try {
-      const fetchPromises = commits.map(commit => 
-        fetch(`/storage/github_micro_bench/${repoName}/benchmark_${commit}.json`)
+      const fetchPromises = commits.map(commit =>
+        fetch(`https://storage.googleapis.com/github_micro_bench/${repoName}/benchmark_${commit}.json`)
           .then(response => response.ok ? response.json() : null)
           .then(data => ({ commit, data }))
       );
@@ -57,12 +112,20 @@ const BenchmarkDisplay = () => {
     }
   }, [commitList]);
 
-  const handleSubmit = (e) => {
-    e.preventDefault();
-    if (repoOwner && repoName && commitHash) {
-      fetchCommitList();
+  const handleSetRepo = async () => {
+    if (repoOwner && repoName) {
+      await fetchBranches();
     } else {
-      setError('Please fill in all fields');
+      setError('Please fill in the repository owner and name');
+    }
+  };
+
+  const handleSubmitCommitHash = async (e) => {
+    e.preventDefault();
+    if (commitHash) {
+      await fetchCommitList();
+    } else {
+      setError('Please fill in the commit hash');
     }
   };
 
@@ -108,30 +171,30 @@ const BenchmarkDisplay = () => {
             <Col key={benchmarkName} xs={12} md={6} lg={4} xl={3} className="mb-4">
               <h2 className="text-sm font-semibold mb-2" title={benchmarkName}>{benchmarkName}</h2>
               <ResponsiveContainer width="100%" height={300}>
-                <LineChart 
+                <LineChart
                   data={prepareChartData(benchmarkName)}
                   margin={{ top: 20, right: 30, left: 10, bottom: 30 }}
                 >
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="commit" 
-                    angle={-45} 
-                    textAnchor="end" 
-                    height={60} 
-                    tick={{fontSize: 12}}
+                  <XAxis
+                    dataKey="commit"
+                    angle={-45}
+                    textAnchor="end"
+                    height={60}
+                    tick={{ fontSize: 12 }}
                     interval={0}
                   />
-                  <YAxis 
+                  <YAxis
                     tickFormatter={formatValue}
                     width={80}
-                    tick={{fontSize: 12}}
+                    tick={{ fontSize: 12 }}
                     tickCount={5}
                   />
                   <Tooltip content={<CustomTooltip />} />
-                  <Line 
-                    type="monotone" 
-                    dataKey="value" 
-                    stroke="#8884d8" 
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#8884d8"
                     dot={false}
                     strokeWidth={1.5}
                   />
@@ -147,34 +210,66 @@ const BenchmarkDisplay = () => {
   return (
     <Container fluid className="p-4">
       <h1 className="h2 mb-4">Benchmark Results</h1>
-      <Form onSubmit={handleSubmit} className="mb-4">
+      <Form>
         <Row>
           <Col xs={12} md={4} className="mb-2">
+            <Form.Label>Repository Owner</Form.Label>
             <Form.Control
               type="text"
               value={repoOwner}
               onChange={(e) => setRepoOwner(e.target.value)}
-              placeholder="Repository Owner"
+              placeholder="Enter Repository Owner"
             />
           </Col>
           <Col xs={12} md={4} className="mb-2">
+            <Form.Label>Repository Name</Form.Label>
             <Form.Control
               type="text"
               value={repoName}
               onChange={(e) => setRepoName(e.target.value)}
-              placeholder="Repository Name"
+              placeholder="Enter Repository Name"
             />
           </Col>
-          <Col xs={12} md={4} className="mb-2">
-            <Form.Control
-              type="text"
-              value={commitHash}
-              onChange={(e) => setCommitHash(e.target.value)}
-              placeholder="Commit Hash"
-            />
+          <Col xs={12} md={4} className="mb-2 d-flex align-items-end">
+            <Button variant="primary" onClick={handleSetRepo}>
+              Set Repo
+            </Button>
           </Col>
         </Row>
-        <Button type="submit" variant="primary">Fetch Data</Button>
+        {(
+          <>
+            <Row>
+              <Col xs={12} md={4} className="mb-2">
+                <Form.Label>Branch</Form.Label>
+                <Form.Control
+                  as="select"
+                  value={selectedBranch}
+                  onChange={(e) => setSelectedBranch(e.target.value)}
+                >
+                  {branches.map(branch => (
+                    <option key={branch.name} value={branch.name}>
+                      {branch.name}
+                    </option>
+                  ))}
+                </Form.Control>
+              </Col>
+              <Col xs={12} md={4} className="mb-2">
+                <Form.Label>Commit Hash</Form.Label>
+                <Form.Control
+                  type="text"
+                  value={commitHash}
+                  onChange={(e) => setCommitHash(e.target.value)}
+                  placeholder="Enter Commit Hash"
+                />
+              </Col>
+              <Col xs={12} md={4} className="mb-2 d-flex align-items-end">
+                <Button variant="primary" onClick={handleSubmitCommitHash}>
+                  Submit Commit Hash and Fetch Data
+                </Button>
+              </Col>
+            </Row>
+          </>
+        )}
       </Form>
       {loading && <p>Loading...</p>}
       {error && <p className="text-danger">Error: {error}</p>}
