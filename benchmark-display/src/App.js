@@ -210,6 +210,7 @@ const BenchmarkDisplay = () => {
   return (
     <Container fluid className="p-4">
       <h1 className="h2 mb-4">Benchmark Results</h1>
+      <p> Fill form below, click on Set Repo first, then select your branch. Default branch is either main or master. </p>
       <Form>
         <Row>
           <Col xs={12} md={4} className="mb-2">
