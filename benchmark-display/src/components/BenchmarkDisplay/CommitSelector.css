@@ -1,0 +1,24 @@
+.dropdown-toggle::after {
+    float: right;
+    margin-top: 10px;
+  }
+  
+  .dropdown-menu {
+    max-height: 300px;
+    overflow-y: auto;
+  }
+  
+  .dropdown-menu .form-control {
+    width: 95% !important;
+  }
+  
+  .dropdown-item {
+    white-space: normal;
+    word-wrap: break-word;
+  }
+  
+  .dropdown-toggle {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }

@@ -1,8 +1,0 @@
-{
-  "short_name": "Micro Benchmarks",
-  "name": "Micro Benchmarks for Expander-rs",
-  "start_url": ".",
-  "display": "standalone",
-  "theme_color": "#000000",
-  "background_color": "#ffffff"
-}
