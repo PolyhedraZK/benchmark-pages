@@ -28,11 +28,15 @@ const BenchmarkCharts = ({ benchmarkData }) => {
   }
 
   const prepareChartData = (benchmarkName) => {
-    return commitList.map(commit => ({
-      commit: commit.substring(0, 7),
-      fullCommit: commit,
-      value: benchmarkData[commit]?.[benchmarkName]?.median_time || null
-    })).filter(data => data.value !== null);
+    return commitList
+      .slice() // Create a shallow copy to avoid modifying the original array
+      .reverse() // Reverse the order of commits
+      .map(commit => ({
+        commit: commit.substring(0, 7),
+        fullCommit: commit,
+        value: benchmarkData[commit]?.[benchmarkName]?.median_time || null
+      }))
+      .filter(data => data.value !== null);
   };
 
   return (
