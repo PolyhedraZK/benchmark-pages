@@ -10,7 +10,7 @@ import './BenchmarkDisplay.css';
 
 const BenchmarkDisplay = () => {
   const [defaultRepoOwner] = useState('PolyhedraZK');
-  const [defaultRepoName] = useState('Expander-rs');
+  const [defaultRepoName] = useState('Expander');
   const [repoOwner, setRepoOwner] = useState(defaultRepoOwner);
   const [confirmedRepoOwner, setConfirmedRepoOwner] = useState(defaultRepoOwner);
   const [repoName, setRepoName] = useState('');
